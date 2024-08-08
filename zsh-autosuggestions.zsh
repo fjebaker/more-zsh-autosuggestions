@@ -43,7 +43,7 @@ typeset -g ZSH_AUTOSUGGEST_ORIGINAL_WIDGET_PREFIX=autosuggest-orig-
 # Will try each strategy in order until a suggestion is returned
 (( ! ${+ZSH_AUTOSUGGEST_STRATEGY} )) && {
 	typeset -ga ZSH_AUTOSUGGEST_STRATEGY
-	ZSH_AUTOSUGGEST_STRATEGY=(history)
+	ZSH_AUTOSUGGEST_STRATEGY=(completion)
 }
 
 # Widgets that clear the suggestion
@@ -362,7 +362,8 @@ _zsh_autosuggest_suggest() {
 	local suggestion="$1"
 
 	if [[ -n "$suggestion" ]] && (( $#BUFFER )); then
-		POSTDISPLAY="${suggestion#$BUFFER}"
+        # TODO: some cleanup, like removing the trailing slashes
+		POSTDISPLAY="{${suggestion#$BUFFER}}"
 	else
 		unset POSTDISPLAY
 	fi
@@ -387,7 +388,9 @@ _zsh_autosuggest_accept() {
 
 	# Only accept if the cursor is at the end of the buffer
 	# Add the suggestion to the buffer
-	BUFFER="$BUFFER$POSTDISPLAY"
+    local selection
+    selection="${POSTDISPLAY:1:-1}"
+	BUFFER="$BUFFER$selection"
 
 	# Remove the suggestion
 	unset POSTDISPLAY
@@ -578,6 +581,7 @@ _zsh_autosuggest_capture_completion_async() {
 	autoload +X _complete
 	functions[_original_complete]=$functions[_complete]
 	function _complete() {
+        # do not edit the line
 		unset 'compstate[vared]'
 		_original_complete "$@"
 	}
@@ -862,3 +866,10 @@ fi
 
 # Start the autosuggestion widgets on the next precmd
 add-zsh-hook precmd _zsh_autosuggest_start
+
+_accept_and_suggest() {
+    zle autosuggest-accept
+    zle autosuggest-fetch
+}
+zle -N _accept_and_suggest
+bindkey '^k' _accept_and_suggest
