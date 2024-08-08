@@ -324,7 +324,7 @@ _zsh_autosuggest_modify() {
 	fi
 
 	# Optimize if manually typing in the suggestion or if buffer hasn't changed
-	if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* ]]; then
+	if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* && "$orig_postdisplay" != "{}"* ]]; then
 		POSTDISPLAY="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
 		return $retval
 	fi
@@ -359,11 +359,16 @@ _zsh_autosuggest_fetch() {
 _zsh_autosuggest_suggest() {
 	emulate -L zsh
 
-	local suggestion="$1"
+	local suggestion="$1" temp
 
 	if [[ -n "$suggestion" ]] && (( $#BUFFER )); then
-        # TODO: some cleanup, like removing the trailing slashes
-		POSTDISPLAY="{${suggestion#$BUFFER}}"
+		# TODO: some cleanup, like removing the trailing slashes
+		temp="{${suggestion#$BUFFER}}"
+		if [[ "$temp" != *"{}"* ]]; then
+			POSTDISPLAY="$temp"
+		else
+			unset POSTDISPLAY
+		fi
 	else
 		unset POSTDISPLAY
 	fi
@@ -388,8 +393,11 @@ _zsh_autosuggest_accept() {
 
 	# Only accept if the cursor is at the end of the buffer
 	# Add the suggestion to the buffer
-    local selection
-    selection="${POSTDISPLAY:1:-1}"
+	local selection all
+
+	all=(${(z)${POSTDISPLAY:1:-1}})
+	selection="${all[1]}"
+
 	BUFFER="$BUFFER$selection"
 
 	# Remove the suggestion
@@ -505,8 +513,9 @@ _zsh_autosuggest_capture_postcompletion() {
 	# Always insert the first completion into the buffer
 	compstate[insert]=1
 
+	compstate[list]=list
 	# Don't list completions
-	unset 'compstate[list]'
+	# unset 'compstate[list]'
 }
 
 _zsh_autosuggest_capture_completion_widget() {
@@ -561,6 +570,13 @@ _zsh_autosuggest_capture_setup() {
 	zstyle ':completion:*' matcher-list ''
 	zstyle ':completion:*' path-completion false
 	zstyle ':completion:*' max-errors 0 not-numeric
+	# Disable description text in completion lists
+	zstyle ':completion:*' format ''
+	zstyle ':completion:*:descriptions' format ''
+	zstyle ':completion:*' group-name ''
+	zstyle ':completion:*:messages' format ''
+	zstyle ':completion:*:warnings' format ''
+	zstyle ':completion:*' verbose no
 
 	bindkey '^I' autosuggest-capture-completion
 }
@@ -581,7 +597,7 @@ _zsh_autosuggest_capture_completion_async() {
 	autoload +X _complete
 	functions[_original_complete]=$functions[_complete]
 	function _complete() {
-        # do not edit the line
+		# do not edit the line
 		unset 'compstate[vared]'
 		_original_complete "$@"
 	}
@@ -598,6 +614,7 @@ _zsh_autosuggest_strategy_completion() {
 	setopt EXTENDED_GLOB
 
 	typeset -g suggestion
+	typeset -g additional_suggestions
 	local line REPLY
 
 	# Exit if we don't have completions
@@ -621,6 +638,22 @@ _zsh_autosuggest_strategy_completion() {
 		# The completion result is surrounded by null bytes, so read the
 		# content between the first two null bytes.
 		zpty -r $ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME line '*'$'\0''*'$'\0'
+
+		local remainder additional=() last=()
+		# drop the first, since it will be what we already have, and last
+		# as it's the BUFFER
+		zpty -r $ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME remainder
+		while zpty -r $ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME remainder; do
+			additional+=$last
+			remainder=${remainder//[$'\n\r']}
+			if [[ "$remainder" == *"do you wish to see all"* ]]; then
+				last=()
+			else
+				last=(${(z)remainder})
+			fi
+		done
+		additional=${(u)additional[@]}
+		additional_suggestions=$additional
 
 		# Extract the suggestion from between the null bytes.  On older
 		# versions of zsh (older than 5.3), we sometimes get extra bytes after
@@ -740,6 +773,7 @@ _zsh_autosuggest_strategy_match_prev_cmd() {
 
 _zsh_autosuggest_fetch_suggestion() {
 	typeset -g suggestion
+	typeset -g additional_suggestions
 	local -a strategies
 	local strategy
 
@@ -796,9 +830,17 @@ _zsh_autosuggest_async_request() {
 		echo $sysparams[pid]
 
 		# Fetch and print the suggestion
-		local suggestion
+		local suggestion additional_suggestions index word
 		_zsh_autosuggest_fetch_suggestion "$1"
 		echo -nE "$suggestion"
+		index=0
+		for word in $(echo $additional_suggestions \
+			| sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGKJ]//g"); do
+			if [[ "$index" != "0" ]]; then
+				echo -nE " $word"
+			fi
+			index+=1
+		done
 	)
 
 	# There's a weird bug here where ^C stops working unless we force a fork
@@ -819,11 +861,12 @@ _zsh_autosuggest_async_request() {
 _zsh_autosuggest_async_response() {
 	emulate -L zsh
 
-	local suggestion
+	local suggestion additional_suggestions
 
 	if [[ -z "$2" || "$2" == "hup" ]]; then
 		# Read everything from the fd and give it as a suggestion
 		IFS='' read -rd '' -u $1 suggestion
+		# zle autosuggest-suggest -- "${suggestion[2]}"
 		zle autosuggest-suggest -- "$suggestion"
 
 		# Close the fd
@@ -868,8 +911,8 @@ fi
 add-zsh-hook precmd _zsh_autosuggest_start
 
 _accept_and_suggest() {
-    zle autosuggest-accept
-    zle autosuggest-fetch
+	zle autosuggest-accept
+	zle autosuggest-fetch
 }
 zle -N _accept_and_suggest
 bindkey '^k' _accept_and_suggest
