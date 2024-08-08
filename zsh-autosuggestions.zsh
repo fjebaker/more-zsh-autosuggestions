@@ -3,7 +3,7 @@
 # v0.7.0
 # Copyright (c) 2013 Thiago de Arruda
 # Copyright (c) 2016-2021 Eric Freese
-# 
+#
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated documentation
 # files (the "Software"), to deal in the Software without
@@ -12,10 +12,10 @@
 # copies of the Software, and to permit persons to whom the
 # Software is furnished to do so, subject to the following
 # conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 # EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
 # OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -242,7 +242,6 @@ _zsh_autosuggest_invoke_original_widget() {
 # If there was a highlight, remove it
 _zsh_autosuggest_highlight_reset() {
 	typeset -g _ZSH_AUTOSUGGEST_LAST_HIGHLIGHT
-
 	if [[ -n "$_ZSH_AUTOSUGGEST_LAST_HIGHLIGHT" ]]; then
 		region_highlight=("${(@)region_highlight:#$_ZSH_AUTOSUGGEST_LAST_HIGHLIGHT}")
 		unset _ZSH_AUTOSUGGEST_LAST_HIGHLIGHT
@@ -360,12 +359,17 @@ _zsh_autosuggest_suggest() {
 	emulate -L zsh
 
 	local suggestion="$1" temp
+    local ncols=$(( 100 - $#BUFFER ))
 
 	if [[ -n "$suggestion" ]] && (( $#BUFFER )); then
 		# TODO: some cleanup, like removing the trailing slashes
-		temp="{${suggestion#$BUFFER}}"
-		if [[ "$temp" != *"{}"* ]]; then
-			POSTDISPLAY="$temp"
+		temp="${suggestion#$BUFFER}"
+		if [[ "$temp" != "" ]]; then
+            if (( $#temp > $ncols )); then
+                POSTDISPLAY="{${temp[1,${ncols}]}...}"
+            else
+                POSTDISPLAY="{$temp}"
+            fi
 		else
 			unset POSTDISPLAY
 		fi
@@ -639,10 +643,11 @@ _zsh_autosuggest_strategy_completion() {
 		# content between the first two null bytes.
 		zpty -r $ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME line '*'$'\0''*'$'\0'
 
-		local remainder additional=() last=()
+		local remainder additional=() last=() index
 		# drop the first, since it will be what we already have, and last
 		# as it's the BUFFER
 		zpty -r $ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME remainder
+        index=0
 		while zpty -r $ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME remainder; do
 			additional+=$last
 			remainder=${remainder//[$'\n\r']}
@@ -651,6 +656,10 @@ _zsh_autosuggest_strategy_completion() {
 			else
 				last=(${(z)remainder})
 			fi
+            index+=1
+            if (( index > 100 )); then
+                break
+            fi
 		done
 		additional=${(u)additional[@]}
 		additional_suggestions=$additional
