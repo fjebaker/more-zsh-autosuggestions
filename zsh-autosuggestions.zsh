@@ -33,7 +33,7 @@
 # Uses format of `region_highlight`
 # More info: http://zsh.sourceforge.net/Doc/Release/Zsh-Line-Editor.html#Zle-Widgets
 (( ! ${+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE} )) &&
-typeset -g ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
+typeset -g ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=yellow'
 
 # Prefix to use when saving original versions of bound widgets
 (( ! ${+ZSH_AUTOSUGGEST_ORIGINAL_WIDGET_PREFIX} )) &&
@@ -305,7 +305,10 @@ _zsh_autosuggest_modify() {
 
 	# Save the contents of the buffer/postdisplay
 	local orig_buffer="$BUFFER"
-	local orig_postdisplay="$POSTDISPLAY"
+	local orig_postdisplay="${POSTDISPLAY}"
+    if (( $#orig_postdisplay > 0 )); then
+        orig_postdisplay="${orig_postdisplay:1:-1}"
+    fi
 
 	# Clear suggestion while waiting for next one
 	unset POSTDISPLAY
@@ -323,8 +326,11 @@ _zsh_autosuggest_modify() {
 	fi
 
 	# Optimize if manually typing in the suggestion or if buffer hasn't changed
-	if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* && "$orig_postdisplay" != "{}"* ]]; then
-		POSTDISPLAY="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
+	if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* ]]; then
+        local new_postdisplay="{${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}}"
+        if [[ "$new_postdisplay" != "{}"* ]]; then
+            POSTDISPLAY=$new_postdisplay
+        fi
 		return $retval
 	fi
 
@@ -516,10 +522,7 @@ _zsh_autosuggest_partial_accept() {
 _zsh_autosuggest_capture_postcompletion() {
 	# Always insert the first completion into the buffer
 	compstate[insert]=1
-
 	compstate[list]=list
-	# Don't list completions
-	# unset 'compstate[list]'
 }
 
 _zsh_autosuggest_capture_completion_widget() {
