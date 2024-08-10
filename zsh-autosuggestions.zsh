@@ -241,22 +241,26 @@ _zsh_autosuggest_invoke_original_widget() {
 
 # If there was a highlight, remove it
 _zsh_autosuggest_highlight_reset() {
-	typeset -g _ZSH_AUTOSUGGEST_LAST_HIGHLIGHT
-	if [[ -n "$_ZSH_AUTOSUGGEST_LAST_HIGHLIGHT" ]]; then
-		region_highlight=("${(@)region_highlight:#$_ZSH_AUTOSUGGEST_LAST_HIGHLIGHT}")
-		unset _ZSH_AUTOSUGGEST_LAST_HIGHLIGHT
+	typeset -g _LAST_HIGHLIGHTS
+	if [[ -n "$_LAST_HIGHLIGHTS" ]]; then
+        for hl ("$_LAST_HIGHLIGHTS[@]"); do
+            region_highlight=("${(@)region_highlight:#$hl}")
+        done
+        _LAST_HIGHLIGHTS=()
 	fi
 }
 
 # If there's a suggestion, highlight it
 _zsh_autosuggest_highlight_apply() {
-	typeset -g _ZSH_AUTOSUGGEST_LAST_HIGHLIGHT
+	typeset -g _LAST_HIGHLIGHTS
+
+    if (( $#_LAST_HIGHLIGHTS == 0 )); then
+        _LAST_HIGHLIGHTS=()
+    fi
 
 	if (( $#POSTDISPLAY )); then
-		typeset -g _ZSH_AUTOSUGGEST_LAST_HIGHLIGHT="$#BUFFER $(($#BUFFER + $#POSTDISPLAY)) $ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE"
-		region_highlight+=("$_ZSH_AUTOSUGGEST_LAST_HIGHLIGHT")
-	else
-		unset _ZSH_AUTOSUGGEST_LAST_HIGHLIGHT
+        _LAST_HIGHLIGHTS+=("$#BUFFER $(($#BUFFER + $#POSTDISPLAY)) $ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE")
+		region_highlight+=$_LAST_HIGHLIGHTS
 	fi
 }
 
@@ -327,9 +331,31 @@ _zsh_autosuggest_modify() {
 
 	# Optimize if manually typing in the suggestion or if buffer hasn't changed
 	if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* ]]; then
-        local new_postdisplay="{${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}}"
-        if [[ "$new_postdisplay" != "{}"* ]]; then
-            POSTDISPLAY=$new_postdisplay
+        local new_postdisplay="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
+        if [[ "$new_postdisplay" != "" ]]; then
+            local temp_buf=()
+            local current_word="${${(z)BUFFER}[-1]}"
+            print $current_word >> /tmp/thing
+            local len=$#current_word index curr_letter
+            typeset -i index=0
+            for item ("${(z)orig_postdisplay}"); do
+                if (( index == 0 )); then
+                    curr_letter="${item[1]}"
+                else
+                    curr_letter="${item[$len]}"
+                fi
+
+                print " $index > cmp $curr_letter == ${current_word[-1]} ($item)" >> /tmp/thing
+
+                if [[ "$curr_letter" == "${current_word[-1]}"* ]]; then
+                    temp_buf+=(${item})
+                fi
+
+                let "index = index + 1"
+            done
+            temp_buf[1]="${${temp_buf[1]}:1}"
+            print "Buf: $temp_buf" >> /tmp/thing
+            POSTDISPLAY="{${(j| |)temp_buf}}"
         fi
 		return $retval
 	fi
