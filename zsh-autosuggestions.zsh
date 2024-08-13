@@ -129,6 +129,15 @@ _zsh_autosuggest_escape_command() {
 	echo -E "${1//(#m)[\"\'\\()\[\]|*?~]/\\$MATCH}"
 }
 
+_zsh_last_word() {
+    if [[ "$1" == *"/"* ]]; then
+        NEW_WORD=(${(s|/|)1})
+        echo -n "${NEW_WORD[-1]}"
+    else
+        echo -n "$1"
+    fi
+}
+
 #--------------------------------------------------------------------#
 # Widget Helpers                                                     #
 #--------------------------------------------------------------------#
@@ -334,8 +343,7 @@ _zsh_autosuggest_modify() {
         local new_postdisplay="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
         if [[ "$new_postdisplay" != "" ]]; then
             local temp_buf=()
-            local current_word="${${(z)BUFFER}[-1]}"
-            print $current_word >> /tmp/thing
+            local current_word="$(_zsh_last_word "${${(z)BUFFER}[-1]}")"
             local len=$#current_word index curr_letter
             typeset -i index=0
             for item ("${(z)orig_postdisplay}"); do
@@ -345,8 +353,6 @@ _zsh_autosuggest_modify() {
                     curr_letter="${item[$len]}"
                 fi
 
-                print " $index > cmp $curr_letter == ${current_word[-1]} ($item)" >> /tmp/thing
-
                 if [[ "$curr_letter" == "${current_word[-1]}"* ]]; then
                     temp_buf+=(${item})
                 fi
@@ -354,7 +360,6 @@ _zsh_autosuggest_modify() {
                 let "index = index + 1"
             done
             temp_buf[1]="${${temp_buf[1]}:1}"
-            print "Buf: $temp_buf" >> /tmp/thing
             POSTDISPLAY="{${(j| |)temp_buf}}"
         fi
 		return $retval
