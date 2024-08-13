@@ -138,6 +138,23 @@ _zsh_last_word() {
     fi
 }
 
+_zsh_find_matches() {
+    typeset -g GLOBAL_MATCHES
+    local reply=$1
+    local current_word="$2"
+    local postdisplay=$GLOBAL_MATCHES
+    local matches=()
+    local len=$#current_word index curr_letter
+    for item ($GLOBAL_MATCHES); do
+        if [[ "$item" == "$current_word"* ]]; then
+            matches+=(${item})
+        fi
+
+        let "index = index + 1"
+    done
+    : ${(PA)reply::="${matches[@]}"}
+}
+
 #--------------------------------------------------------------------#
 # Widget Helpers                                                     #
 #--------------------------------------------------------------------#
@@ -338,32 +355,26 @@ _zsh_autosuggest_modify() {
 		return $retval
 	fi
 
+    # if at the begging of the buffer, don't do anything
+    if (( $CURSOR == 0 )); then
+        POSTDISPLAY=""
+        return $retval
+    fi
+
+    local current_word="$(_zsh_last_word "${${(z)BUFFER}[-1]}")"
+
 	# Optimize if manually typing in the suggestion or if buffer hasn't changed
-	if [[ "$BUFFER" = "$orig_buffer"* && "$orig_postdisplay" = "${BUFFER:$#orig_buffer}"* ]]; then
-        local new_postdisplay="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
-        if [[ "$new_postdisplay" != "" ]]; then
-            local temp_buf=()
-            local current_word="$(_zsh_last_word "${${(z)BUFFER}[-1]}")"
-            local len=$#current_word index curr_letter
-            typeset -i index=0
-            for item ("${(z)orig_postdisplay}"); do
-                if (( index == 0 )); then
-                    curr_letter="${item[1]}"
-                else
-                    curr_letter="${item[$len]}"
-                fi
-
-                if [[ "$curr_letter" == "${current_word[-1]}"* ]]; then
-                    temp_buf+=(${item})
-                fi
-
-                let "index = index + 1"
-            done
-            temp_buf[1]="${${temp_buf[1]}:1}"
-            POSTDISPLAY="{${(j| |)temp_buf}}"
+    local new_postdisplay="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
+    match_array=()
+    if [[ $#GLOBAL_MATCHES > 0 && "$new_postdisplay" != "" ]]; then
+        _zsh_find_matches match_array "$current_word" "$orig_postdisplay"
+        if (( $#match_array > 0 )); then
+            # remove the first character from the first match
+            match_array[1]="${match_array[1]#$current_word}"
+            POSTDISPLAY="{${(j| |)match_array}}"
+            return $retval
         fi
-		return $retval
-	fi
+    fi
 
 	# Bail out if suggestions are disabled
 	if (( ${+_ZSH_AUTOSUGGEST_DISABLED} )); then
@@ -376,7 +387,6 @@ _zsh_autosuggest_modify() {
 			_zsh_autosuggest_fetch
 		fi
 	fi
-
 	return $retval
 }
 
@@ -395,13 +405,19 @@ _zsh_autosuggest_fetch() {
 _zsh_autosuggest_suggest() {
 	emulate -L zsh
 
+    typeset -g GLOBAL_MATCHES=()
 	local suggestion="$1" temp
     local ncols=$(( 100 - $#BUFFER ))
 
 	if [[ -n "$suggestion" ]] && (( $#BUFFER )); then
-		# TODO: some cleanup, like removing the trailing slashes
-		temp="${suggestion#$BUFFER}"
-		if [[ "$temp" != "" ]]; then
+        temp=(${(z)${suggestion#$BUFFER}})
+        temp[1]="${temp[1]#$BUFFER}"
+
+        GLOBAL_MATCHES=($temp)
+        # remove the first element
+
+        if (( $#GLOBAL_MATCHES > 1 )); then
+            shift GLOBAL_MATCHES
             if (( $#temp > $ncols )); then
                 POSTDISPLAY="{${temp[1,${ncols}]}...}"
             else
@@ -695,8 +711,10 @@ _zsh_autosuggest_strategy_completion() {
                 break
             fi
 		done
+        # get unique
 		additional=${(u)additional[@]}
-		additional_suggestions=$additional
+        # avoid empty strings
+        additional_suggestions=${(z)${=additional}}
 
 		# Extract the suggestion from between the null bytes.  On older
 		# versions of zsh (older than 5.3), we sometimes get extra bytes after
@@ -876,13 +894,13 @@ _zsh_autosuggest_async_request() {
 		local suggestion additional_suggestions index word
 		_zsh_autosuggest_fetch_suggestion "$1"
 		echo -nE "$suggestion"
-		index=0
+		# index=0
 		for word in $(echo $additional_suggestions \
 			| sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGKJ]//g"); do
-			if [[ "$index" != "0" ]]; then
+			# if [[ "$index" != "0" ]]; then
 				echo -nE " $word"
-			fi
-			index+=1
+			# fi
+			# index+=1
 		done
 	)
 
