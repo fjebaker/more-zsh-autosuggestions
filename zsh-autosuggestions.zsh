@@ -122,6 +122,10 @@ typeset -g ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME=zsh_autosuggest_completion_pty
 # Utility Functions                                                  #
 #--------------------------------------------------------------------#
 
+LOG() {
+    # print "$@" >> /tmp/thing
+}
+
 _zsh_autosuggest_escape_command() {
 	setopt localoptions EXTENDED_GLOB
 
@@ -130,11 +134,12 @@ _zsh_autosuggest_escape_command() {
 }
 
 _zsh_last_word() {
-    if [[ "$1" == *"/"* ]]; then
-        NEW_WORD=(${(s|/|)1})
-        echo -n "${NEW_WORD[-1]}"
+    local word=$(echo "$1" | awk '{print $NF;}')
+    if [[ "$word" == *"/"* && "${word[-1]}" != "/" ]]; then
+        local new_word=(${(s|/|)word})
+        echo -n "${new_word[-1]}"
     else
-        echo -n "$1"
+        echo -n "$word"
     fi
 }
 
@@ -142,9 +147,10 @@ _zsh_find_matches() {
     typeset -g GLOBAL_MATCHES
     local reply=$1
     local current_word="$2"
-    local postdisplay=$GLOBAL_MATCHES
     local matches=()
     local len=$#current_word index curr_letter
+    LOG "    - word: $current_word"
+    LOG "    - $GLOBAL_MATCHES"
     for item ($GLOBAL_MATCHES); do
         if [[ "$item" == "$current_word"* ]]; then
             matches+=(${item})
@@ -361,13 +367,21 @@ _zsh_autosuggest_modify() {
         return $retval
     fi
 
-    local current_word="$(_zsh_last_word "${${(z)BUFFER}[-1]}")"
+    # if there are currently matches, but a space was pressed, fallback
+    local -i FALLBACK=1
+    if [[ "${BUFFER[$CURSOR]}" == " " ]]; then
+        FALLBACK=0
+    fi
+
+    local current_word=$(_zsh_last_word "$BUFFER")
+    LOG "      cur: '$current_word'"
 
 	# Optimize if manually typing in the suggestion or if buffer hasn't changed
     local new_postdisplay="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
     match_array=()
-    if [[ $#GLOBAL_MATCHES > 0 && "$new_postdisplay" != "" ]]; then
-        _zsh_find_matches match_array "$current_word" "$orig_postdisplay"
+    if [[ $FALLBACK > 0 && $#GLOBAL_MATCHES > 0 && "$new_postdisplay" != "" ]]; then
+        _zsh_find_matches match_array "$current_word"
+        LOG "MOD : $match_array"
         if (( $#match_array > 0 )); then
             # remove the first character from the first match
             match_array[1]="${match_array[1]#$current_word}"
@@ -403,6 +417,7 @@ _zsh_autosuggest_fetch() {
 
 # Offer a suggestion
 _zsh_autosuggest_suggest() {
+    LOG "$( echo '--' | ts )"
 	emulate -L zsh
 
     typeset -g GLOBAL_MATCHES=()
@@ -412,23 +427,39 @@ _zsh_autosuggest_suggest() {
 	if [[ -n "$suggestion" ]] && (( $#BUFFER )); then
         temp=(${(z)${suggestion#$BUFFER}})
         temp[1]="${temp[1]#$BUFFER}"
+        LOG "TEMP: $temp"
 
         GLOBAL_MATCHES=($temp)
-        # remove the first element
-
-        if (( $#GLOBAL_MATCHES > 1 )); then
+        if [[ $#GLOBAL_MATCHES == 1 && "$temp" =~ "([^ -~]*)" ]]; then
+            # there is only one match
+            local match=$( echo -nE "$temp" | tr -d "[:cntrl:]" )
+            LOG "MATCH '$match' ($#match)"
+            if (( $#match > 0 )); then
+                LOG "ONE MATCH"
+                GLOBAL_MATCHES=("$match")
+                POSTDISPLAY="{$match}"
+                return 0
+            fi
+        elif (( $#GLOBAL_MATCHES > 1 )); then
+            LOG "MANY MATCH"
             shift GLOBAL_MATCHES
+            LOG "GLOB: $GLOBAL_MATCHES"
+            # unset the second match to avoid repeating first argument
+            if (( $#temp > 2 )); then
+                temp[2]=()
+            fi
             if (( $#temp > $ncols )); then
                 POSTDISPLAY="{${temp[1,${ncols}]}...}"
             else
                 POSTDISPLAY="{$temp}"
             fi
-		else
-			unset POSTDISPLAY
-		fi
-	else
-		unset POSTDISPLAY
-	fi
+            return 0
+       fi
+    fi
+    LOG "NO MATCH"
+    GLOBAL_MATCHES=()
+    unset POSTDISPLAY
+    return 0
 }
 
 # Accept the entire suggestion
@@ -700,7 +731,7 @@ _zsh_autosuggest_strategy_completion() {
         index=0
 		while zpty -r $ZSH_AUTOSUGGEST_COMPLETIONS_PTY_NAME remainder; do
 			additional+=$last
-			remainder=${remainder//[$'\n\r']}
+			remainder=${remainder//[$'\n\r\t']}
 			if [[ "$remainder" == *"do you wish to see all"* ]]; then
 				last=()
 			else
