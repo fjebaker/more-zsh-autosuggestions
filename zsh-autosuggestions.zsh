@@ -29,6 +29,8 @@
 # Global Configuration Variables                                     #
 #--------------------------------------------------------------------#
 
+ZSH_AUTOSUGGEST_MANUAL_REBIND="YES"
+
 # Color to use when highlighting suggestion
 # Uses format of `region_highlight`
 # More info: http://zsh.sourceforge.net/Doc/Release/Zsh-Line-Editor.html#Zle-Widgets
@@ -422,7 +424,7 @@ _zsh_autosuggest_suggest() {
 
     typeset -g GLOBAL_MATCHES=()
 	local suggestion="$1" temp
-    local ncols=$(( 100 - $#BUFFER ))
+    local -i ncols=150
 
 	if [[ -n "$suggestion" ]] && (( $#BUFFER )); then
         temp=(${(z)${suggestion#$BUFFER}})
@@ -448,10 +450,10 @@ _zsh_autosuggest_suggest() {
             if (( $#temp > 2 )); then
                 temp[2]=()
             fi
-            if (( $#temp > $ncols )); then
-                POSTDISPLAY="{${temp[1,${ncols}]}...}"
-            else
-                POSTDISPLAY="{$temp}"
+
+            POSTDISPLAY="{$temp}"
+            if (( $#POSTDISPLAY - 1 > $ncols )); then
+                POSTDISPLAY="${POSTDISPLAY[1,${ncols}]}...}"
             fi
             return 0
        fi
@@ -635,6 +637,9 @@ _zsh_autosuggest_capture_completion_widget() {
 zle -N autosuggest-capture-completion _zsh_autosuggest_capture_completion_widget
 
 _zsh_autosuggest_capture_setup() {
+    # this seems to make sure everything is always suggested
+    COLUMNS=1000
+    LINES=1000
 	# There is a bug in zpty module in older zsh versions by which a
 	# zpty that exits will kill all zpty processes that were forked
 	# before it. Here we set up a zsh exit hook to SIGKILL the zpty
@@ -738,7 +743,7 @@ _zsh_autosuggest_strategy_completion() {
 				last=(${(z)remainder})
 			fi
             index+=1
-            if (( index > 100 )); then
+            if (( index > 200 )); then
                 break
             fi
 		done
