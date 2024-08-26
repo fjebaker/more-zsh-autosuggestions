@@ -7,7 +7,7 @@ Fork of [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions) 
 
 Put `zsh-autosuggestions.zsh` somewhere (e.g. in your home directory), and then add
 ```bash
-source /path/to.zsh-autosuggestions.zsh
+source /path/to/.zsh-autosuggestions.zsh
 ```
 in your `.zshrc`, then start a new terminal.
 
