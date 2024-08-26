@@ -370,9 +370,9 @@ _zsh_autosuggest_modify() {
     fi
 
     # if there are currently matches, but a space was pressed, fallback
-    local -i FALLBACK=1
+    local -i fallback=1
     if [[ "${BUFFER[$CURSOR]}" == " " ]]; then
-        FALLBACK=0
+        fallback=0
     fi
 
     local current_word=$(_zsh_last_word "$BUFFER")
@@ -381,7 +381,7 @@ _zsh_autosuggest_modify() {
 	# Optimize if manually typing in the suggestion or if buffer hasn't changed
     local new_postdisplay="${orig_postdisplay:$(($#BUFFER - $#orig_buffer))}"
     match_array=()
-    if [[ $FALLBACK > 0 && $#GLOBAL_MATCHES > 0 && "$new_postdisplay" != "" ]]; then
+    if [[ $fallback > 0 && $#GLOBAL_MATCHES > 0 && "$new_postdisplay" != "" ]]; then
         _zsh_find_matches match_array "$current_word"
         LOG "MOD : $match_array"
         if (( $#match_array > 0 )); then
@@ -419,7 +419,6 @@ _zsh_autosuggest_fetch() {
 
 # Offer a suggestion
 _zsh_autosuggest_suggest() {
-    LOG "$( echo '--' | ts )"
 	emulate -L zsh
 
     typeset -g GLOBAL_MATCHES=()
@@ -927,16 +926,12 @@ _zsh_autosuggest_async_request() {
 		echo $sysparams[pid]
 
 		# Fetch and print the suggestion
-		local suggestion additional_suggestions index word
+		local suggestion additional_suggestions word
 		_zsh_autosuggest_fetch_suggestion "$1"
 		echo -nE "$suggestion"
-		# index=0
 		for word in $(echo $additional_suggestions \
 			| sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGKJ]//g"); do
-			# if [[ "$index" != "0" ]]; then
-				echo -nE " $word"
-			# fi
-			# index+=1
+            echo -nE " $word"
 		done
 	)
 
